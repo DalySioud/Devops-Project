@@ -1,0 +1,98 @@
+pipeline {
+    agent any
+    stages {
+        stage('GIT') {
+            steps {
+                echo 'Cloner le code depuis votre dépôt Git';
+                git branch: 'RahmouniGhofrane-5arctic4-G8', url: 'https://github.com/ghofrane0155/5arctic4-G8-Kaddem', credentialsId: 'jenkins-private-token'
+            }
+        }
+        stage('MAVEN BUILD') {
+            steps {
+                echo 'Lancer Maven pour nettoyer le projet';
+                sh 'mvn clean'
+                echo 'Mise à jour des dépendances du projet';
+                sh 'mvn dependency:resolve'
+                echo 'Lancer Maven pour compiler le projet';
+                sh 'mvn compile'
+            }
+        }
+        stage('Run Tests') {
+            steps {
+                echo 'Running tests...'
+                sh 'mvn test'
+            }
+        }
+        stage('JaCoCo Report') {
+            steps {
+                echo 'Generating JaCoCo report'
+                sh 'mvn jacoco:report'
+            }
+        }
+        stage('SONARQUBE') {
+            steps {
+                echo 'Lancer Maven pour l\'analyse SonarQube';
+                withSonarQubeEnv('sq1') {
+                    sh 'mvn sonar:sonar'
+                }
+            }
+        }
+        stage('Build Package') {
+            steps {
+                echo 'Building the backend project package...'
+                sh 'mvn package'
+            }
+        }
+        stage('NEXUS DEPLOY') {
+            steps {
+                echo 'Déploiement du package dans Nexus...'
+                sh 'mvn deploy'
+            }
+        }
+        stage('Build Frontend') {
+            steps {
+                echo 'Building the Angular frontend using Docker...'
+                script {
+                    dir('front') {
+                        sh 'sudo npm install'
+                        sh 'sudo ng build --configuration production'
+                    }
+                }
+            }
+        }
+        stage('Docker Image') {
+            steps {
+                echo 'Building Docker image for frontend...'
+                dir('front') {
+                    sh 'docker build -t ghofrane0155/kaddem-frontend:0.0.1 .'
+                }
+                echo 'Building backend image...'
+                sh 'docker build -t ghofrane0155/kaddem:0.0.1 .'
+            }
+        }
+        stage('PUSH IMAGE') {
+            steps {
+                echo 'Logging into Docker Hub...'
+                sh 'docker login -u ghofrane0155 -p roronoaZ0155..'
+                echo 'Pushing frontend Docker image...'
+                sh 'docker push ghofrane0155/kaddem-frontend:0.0.1'
+                echo 'Pushing backend Docker image...'
+                sh 'docker push ghofrane0155/kaddem:0.0.1'
+            }
+        }
+        stage('DOCKER COMPOSE') {
+            steps {
+                echo 'Start Backend + DB...'
+                sh 'docker compose up -d'
+            }
+        }
+    }
+    post {
+        success {
+            emailext attachLog: true, body: 'Le pipeline a réussi avec succès !', subject: '$PROJECT_NAME - Build # $BUILD_NUMBER - $BUILD_STATUS!', to: 'ghofrane.rahmouni@esprit.tn'
+        }
+        failure {
+            emailext attachLog: true, body: 'Le pipeline a échoué. Veuillez vérifier les logs Jenkins pour plus de détails.', subject: '$PROJECT_NAME - Build # $BUILD_NUMBER - $BUILD_STATUS!', to: 'ghofrane.rahmouni@esprit.tn'
+        }
+    }
+}
