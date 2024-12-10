@@ -1,0 +1,102 @@
+pipeline {
+    agent any
+
+    environment {
+        GIT_CREDENTIALS = credentials('Git_Token')
+        DOCKER_HUB_CREDENTIALS = credentials('Docker_ID')
+        SONARQUBE_ENV = 'sq1' // Name of the SonarQube instance in Jenkins
+    }
+
+    stages {
+        
+        stage('Checkout Source Code') {
+            steps {
+                git branch: 'main', 
+                    url: 'https://github.com/DalySioud/Devops-Project.git',
+                    credentialsId: 'Git_Token'
+            }
+        }
+        
+        stage('Build with Maven') {
+            steps {
+                bat 'mvn clean install'
+            }
+        }
+        
+        stage('Run Unit Tests') {
+            steps {
+                bat 'mvn test'
+            }
+        }
+        
+        stage('Code Quality Check with SonarQube') {
+            steps {
+                withSonarQubeEnv('SonarQube') {
+                    bat 'mvn sonar:sonar'
+                }
+            }
+        }
+        
+        stage('Package Distribution JAR') {
+            steps {
+                bat 'mvn package'
+            }
+        }
+        
+        stage('Upload Artifacts to Nexus') {
+            steps {
+                bat 'mvn deploy'
+            }
+        }
+        
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    def imageName = "dalysioud19/events-project"
+                    bat "docker build -t ${imageName} ."
+                }
+            }
+        }
+        
+        stage('Push Docker Image to DockerHub') {
+            steps {
+                withDockerRegistry([credentialsId: 'dockerhub-credentials-id']) {
+                    script {
+                        def imageName = "dalysioud19/events-project"
+                        bat "docker push ${imageName}"
+                    }
+                }
+            }
+        }
+        
+        stage('Deploy Using Docker Compose') {
+            steps {
+                bat 'docker-compose up -d'
+            }
+        }
+        
+        stage('Run Postman/Swagger Tests') {
+            steps {
+                echo 'Run manual tests using Postman or Swagger to verify API endpoints'
+            }
+        }
+        
+        stage('Monitoring with Grafana and Prometheus') {
+            steps {
+                echo 'Access Grafana at http://localhost:3000 and Prometheus at http://localhost:9090'
+            }
+        }
+    }
+    
+    post {
+        always {
+            cleanWs()
+        }
+        success {
+            echo '🎉 Pipeline completed successfully!'
+        }
+        failure {
+            echo '❌ Pipeline failed. Check logs for issues.'
+        }
+    }
+}
